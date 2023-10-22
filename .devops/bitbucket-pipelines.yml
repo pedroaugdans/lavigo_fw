@@ -1,0 +1,218 @@
+image: lavigo/pipelines-esp
+
+clone:
+  depth: 1
+
+definitions:
+  caches:
+    xtensa: ~/.espressif/tools/xtensa-esp32-elf
+    submodules: .git/modules
+    ccache: whereis ccache
+    esp-idf: .esp-idf
+    esp-aws-iot: .esp-aws-iot
+    build: service/build
+    bin: service/bin
+
+pipelines:
+  default:
+    - step:
+        caches:
+          - node
+        script:
+          - echo "nope, nothing to see here"
+
+  custom:
+#--- PROTECTED CUSTOM ---------------------------------------------------------#
+    #demo-from-master:
+    #  - step:
+    #      name: Branch Check
+    #      script:
+    #        - if [ "${BITBUCKET_BRANCH}" == "master" ];then
+    #        -   echo ""
+    #        - else
+    #        -   echo "Not master :("
+    #        -   exit 1
+    #        - fi
+    #  - step:
+    #      name: Initial Build
+    #      caches:
+    #        - node
+    #      script:
+    #        - npm install
+    #  - step:
+    #      name: Deploy to Demo
+    #      caches:
+    #        - node
+    #      script:
+    #        - echo "deploy to demo"
+    #  - step:
+    #      name: Terminate Demo
+    #      trigger: manual
+    #      script:
+    #        - echo "demo terminated"
+#------------------------------------------------------------------------------#
+  branches:
+#--- PROTECTED BRANCHES -------------------------------------------------------#
+    '{feature/*,bugfix/*,hotfix/*}':
+      - step:
+          name: Deploy to branch
+          caches:
+            - xtensa
+            - submodules
+            - ccache
+            - esp-idf
+            - esp-aws-iot
+            - build
+            - bin
+          script:
+            - git submodule update --init --remote
+            - export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+            - export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+            - ./.devops/setup.sh
+            - ./.devops/build.sh
+            - ./.devops/deploy.sh
+#      - step:
+#          name: Run Unit Tests
+#          caches:
+#            - infrastructure
+#            - service
+#          script:
+#            - git submodule update --init --remote
+#            - export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+#            - export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+#            #- ./.devops/test.sh --type unit --region ${AWS_BRANCH_REGION} --account ${AWS_BRANCH_ACCOUNT}
+#            #- save coverage
+      - step:
+          name: Move Branch to Develop
+          trigger: manual
+          script:
+            - git remote set-url origin ${BITBUCKET_GIT_SSH_ORIGIN}
+            - git fetch
+            - git checkout -b develop
+            - git merge ${BITBUCKET_BRANCH}
+            - git push -v --tags origin develop:develop
+    develop:
+      - step:
+          name: Deploy to Test
+          deployment: test
+          caches:
+            - xtensa
+            - submodules
+            - ccache
+            - esp-idf
+            - esp-aws-iot
+            - build
+            - bin
+          script:
+            - git submodule update --init --remote
+            - export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+            - export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+            - ./.devops/setup.sh
+            - ./.devops/build.sh
+            - ./.devops/deploy.sh
+#      - step:
+#          name: Run Unit Tests
+#          caches:
+#            - infrastructure
+#            - service
+#          script:
+#            - git submodule update --init --remote
+#            - export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+#            - export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+#            #- ./.devops/test.sh --type unit --region ${AWS_BRANCH_REGION} --account ${AWS_BRANCH_ACCOUNT}
+#            #- save coverage
+      - step:
+          name: Move Develop to Release
+          trigger: manual
+          script:
+            - git remote set-url origin ${BITBUCKET_GIT_SSH_ORIGIN}
+            - git fetch
+            - git checkout -b release
+            - git merge ${BITBUCKET_BRANCH}
+            - git push -v --tags origin release:release
+    release:
+      - step:
+          name: Deploy to Staging
+          deployment: staging
+          caches:
+            - xtensa
+            - submodules
+            - ccache
+            - esp-idf
+            - esp-aws-iot
+            - build
+            - bin
+          script:
+            - git submodule update --init --remote
+            - export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+            - export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+            - ./.devops/setup.sh
+            - ./.devops/build.sh
+            - ./.devops/deploy.sh
+#      - parallel:
+#          - step:
+#              name: Run Functional Tests
+#              after-script:
+#                - echo "after script has run!"
+#              caches:
+#                - node
+#              script:
+#                - npm run functional-tests
+#                #- save coverage
+#          - step:
+#              name: Run Performance Tests
+#              caches:
+#                - node
+#              script:
+#                - npm run performance-tests
+#                #- save coverage
+#          - step:
+#              name: Run Usability Tests
+#              caches:
+#                - node
+#              script:
+#                - npm run usability-tests
+#                #- save coverage
+      - step:
+          name: Move Release to Master
+          trigger: manual
+          script:
+            - git remote set-url origin ${BITBUCKET_GIT_SSH_ORIGIN}
+            - git fetch
+            - git checkout -b master
+            - git merge ${BITBUCKET_BRANCH}
+            - git push -v --tags origin master:master
+    master:
+      - step:
+          name: Nothing to deploy in Master
+          script:
+            - echo "Ready to deploy to demo or production!"
+      - step:
+          name: Move Master to Production
+          trigger: manual
+          script:
+            - git remote set-url origin ${BITBUCKET_GIT_SSH_ORIGIN}
+            - git fetch
+            - git checkout -b product
+            - git merge ${BITBUCKET_BRANCH}
+            - git push -v --tags origin product:product
+    product:
+      - step:
+          name: Deploy to Production
+          deployment: production
+          caches:
+            - xtensa
+            - submodules
+            - ccache
+            - esp-idf
+            - esp-aws-iot
+            - build
+            - bin
+          script:
+            - git submodule update --init --remote
+            - export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+            - export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+            - ./.devops/setup.sh
+            - ./.devops/build.sh
+            - ./.devops/deploy.sh
+#------------------------------------------------------------------------------#
